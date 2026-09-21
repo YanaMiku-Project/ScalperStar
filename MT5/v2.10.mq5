@@ -1,6 +1,6 @@
 #property copyright "YanaMiku"
 #property link      ""
-#property version   "2.10"
+#property version   "2.20"
 
 input double InpLotSize              = 0.01;
 input double InpPendingDistancePips  = 30.0;
@@ -16,6 +16,7 @@ int OnInit()
   {
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   
    if(digits == 3 || digits == 5)
       m_pip_size = point * 10.0;
    else
@@ -95,10 +96,13 @@ void DeleteAllOrders()
         {
          if(OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == InpMagicNumber)
            {
-            MqlTradeRequest request={0};
-            MqlTradeResult result={0};
+            MqlTradeRequest request;
+            MqlTradeResult result;
+            ZeroMemory(request);
+            ZeroMemory(result);
+            
             request.action = TRADE_ACTION_REMOVE;
-            request.order = ticket;
+            request.order  = ticket;
             
             if(OrderSend(request, result))
                Print("[EA] Pending order terhapus. Ticket: ", ticket);
@@ -115,7 +119,7 @@ void PlacePendingOrders()
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   double stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * point;
+   double stopsLevel = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * point;
    
    double pendingDist = InpPendingDistancePips * m_pip_size;
    double slDist = InpStopLossPips * m_pip_size;
@@ -132,17 +136,21 @@ void PlacePendingOrders()
    double sellStopPrice = NormalizeDouble(bid - pendingDist, digits);
    double sellSL = NormalizeDouble(sellStopPrice + slDist, digits);
    
-   MqlTradeRequest reqBuy={0};
-   MqlTradeResult resBuy={0};
-   reqBuy.action = TRADE_ACTION_PENDING;
-   reqBuy.symbol = _Symbol;
-   reqBuy.volume = InpLotSize;
-   reqBuy.price = buyStopPrice;
-   reqBuy.sl = buySL;
-   reqBuy.type = ORDER_TYPE_BUY_STOP;
-   reqBuy.magic = InpMagicNumber;
+   MqlTradeRequest reqBuy;
+   MqlTradeResult resBuy;
+   ZeroMemory(reqBuy);
+   ZeroMemory(resBuy);
+   
+   reqBuy.action    = TRADE_ACTION_PENDING;
+   reqBuy.symbol    = _Symbol;
+   reqBuy.volume    = InpLotSize;
+   reqBuy.price     = buyStopPrice;
+   reqBuy.sl        = buySL;
+   reqBuy.type      = ORDER_TYPE_BUY_STOP;
+   reqBuy.type_time = ORDER_TIME_GTC;
+   reqBuy.magic     = InpMagicNumber;
    reqBuy.deviation = InpDeviationPoints;
-   reqBuy.comment = "Yanamiku BuyStop";
+   reqBuy.comment   = "Yanamiku BuyStop";
    
    if(OrderSend(reqBuy, resBuy))
       Print("[EA] BUY STOP placed at: ", buyStopPrice, " SL: ", buySL);
@@ -152,17 +160,21 @@ void PlacePendingOrders()
       return;
      }
       
-   MqlTradeRequest reqSell={0};
-   MqlTradeResult resSell={0};
-   reqSell.action = TRADE_ACTION_PENDING;
-   reqSell.symbol = _Symbol;
-   reqSell.volume = InpLotSize;
-   reqSell.price = sellStopPrice;
-   reqSell.sl = sellSL;
-   reqSell.type = ORDER_TYPE_SELL_STOP;
-   reqSell.magic = InpMagicNumber;
+   MqlTradeRequest reqSell;
+   MqlTradeResult resSell;
+   ZeroMemory(reqSell);
+   ZeroMemory(resSell);
+   
+   reqSell.action    = TRADE_ACTION_PENDING;
+   reqSell.symbol    = _Symbol;
+   reqSell.volume    = InpLotSize;
+   reqSell.price     = sellStopPrice;
+   reqSell.sl        = sellSL;
+   reqSell.type      = ORDER_TYPE_SELL_STOP;
+   reqSell.type_time = ORDER_TIME_GTC;
+   reqSell.magic     = InpMagicNumber;
    reqSell.deviation = InpDeviationPoints;
-   reqSell.comment = "Yanamiku SellStop";
+   reqSell.comment   = "Yanamiku SellStop";
    
    if(OrderSend(reqSell, resSell))
       Print("[EA] SELL STOP placed at: ", sellStopPrice, " SL: ", sellSL);
@@ -174,7 +186,7 @@ void ManageTrailingStop()
   {
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   double stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * point;
+   double stopsLevel = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * point;
    
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
@@ -185,7 +197,7 @@ void ManageTrailingStop()
            {
             double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
             double currentSL = PositionGetDouble(POSITION_SL);
-            long type = PositionGetInteger(POSITION_TYPE);
+            ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
             
             double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
             double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
@@ -202,13 +214,16 @@ void ManageTrailingStop()
                   
                   if((newSL > currentSL + point || currentSL == 0.0) && newSL <= (bid - stopsLevel))
                     {
-                     MqlTradeRequest req={0};
-                     MqlTradeResult res={0};
-                     req.action = TRADE_ACTION_SLTP;
+                     MqlTradeRequest req;
+                     MqlTradeResult res;
+                     ZeroMemory(req);
+                     ZeroMemory(res);
+                     
+                     req.action   = TRADE_ACTION_SLTP;
                      req.position = ticket;
-                     req.symbol = _Symbol;
-                     req.sl = newSL;
-                     req.tp = PositionGetDouble(POSITION_TP);
+                     req.symbol   = _Symbol;
+                     req.sl       = newSL;
+                     req.tp       = PositionGetDouble(POSITION_TP);
                      
                      if(OrderSend(req, res))
                         Print("[EA] Trailing SL BUY modified to: ", newSL);
@@ -224,13 +239,16 @@ void ManageTrailingStop()
                   
                   if((newSL < currentSL - point || currentSL == 0.0) && newSL >= (ask + stopsLevel))
                     {
-                     MqlTradeRequest req={0};
-                     MqlTradeResult res={0};
-                     req.action = TRADE_ACTION_SLTP;
+                     MqlTradeRequest req;
+                     MqlTradeResult res;
+                     ZeroMemory(req);
+                     ZeroMemory(res);
+                     
+                     req.action   = TRADE_ACTION_SLTP;
                      req.position = ticket;
-                     req.symbol = _Symbol;
-                     req.sl = newSL;
-                     req.tp = PositionGetDouble(POSITION_TP);
+                     req.symbol   = _Symbol;
+                     req.sl       = newSL;
+                     req.tp       = PositionGetDouble(POSITION_TP);
                      
                      if(OrderSend(req, res))
                         Print("[EA] Trailing SL SELL modified to: ", newSL);
