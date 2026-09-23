@@ -1,18 +1,13 @@
-//+------------------------------------------------------------------+
-//|                        YANAMIKU_SINGLE_ENTRY_BUY_STOP_SELL_STOP.mq5 |
-//|                                   Copyright 2026, Yanamiku Script   |
-//+------------------------------------------------------------------+
-#property copyright "Copyright 2026"
-#property link      ""
-#property version   "1.00"
+#property copyright "YanaMiku"
+#property link      "t.me/YanaMiku"
+#property version   "3.00"
 
 #include <Trade\Trade.mqh>
 #include <Trade\SymbolInfo.mqh>
 
-//--- ENUMS
 enum ENUM_TRADING_MODE {
-   MODE_1 = 1, // MODE 1 - SINGLE ENTRY TRAILING
-   MODE_2 = 2  // MODE 2 - SMART DYNAMIC REVERSAL
+   MODE_1 = 1,
+   MODE_2 = 2
 };
 
 enum ENUM_EA_STATE {
@@ -23,7 +18,6 @@ enum ENUM_EA_STATE {
    STATE_RESET
 };
 
-//--- INPUTS
 input ENUM_TRADING_MODE TradingMode = MODE_1;
 input double FixedLot = 0.01;
 input double InitialDistancePips = 10.0;
@@ -33,7 +27,7 @@ input double TrailingDistancePips = 10.0;
 input double TrailingStepPips = 1.0;
 input double DynamicPendingDistancePips = 10.0;
 input double MinimumOppositeOffsetPips = 0.1;
-input double MaxSpreadPips = 0.0; // 0 = tidak membatasi spread
+input double MaxSpreadPips = 0.0;
 input ulong  MagicNumber = 20260923;
 input ulong  MaxSlippagePoints = 20;
 input bool   UseTradingSession = false;
@@ -43,7 +37,6 @@ input bool   EnableTelegramNotification = false;
 input string TelegramBotToken = "";
 input string TelegramChatID = "";
 
-//--- GLOBAL VARIABLES
 CTrade         trade;
 CSymbolInfo    symInfo;
 ENUM_EA_STATE  currentState = STATE_IDLE;
@@ -53,9 +46,6 @@ double         maxVolume = 0.0;
 double         volStep = 0.0;
 int            digits = 0;
 
-//+------------------------------------------------------------------+
-//| EXPERT INITIALIZATION                                            |
-//+------------------------------------------------------------------+
 int OnInit() {
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetDeviationInPoints(MaxSlippagePoints);
@@ -71,32 +61,23 @@ int OnInit() {
    maxVolume = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
    volStep   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
    
-   Print("[YANAMIKU] EA INITIALIZED - ", (TradingMode == MODE_1 ? "MODE 1" : "MODE 2"));
-   SendTelegramMsg("[YANAMIKU] EA STARTED - " + (TradingMode == MODE_1 ? "MODE 1" : "MODE 2"));
+   Print("[ScalperStar] EA INITIALIZED - ", (TradingMode == MODE_1 ? "MODE 1" : "MODE 2"));
+   SendTelegramMsg("[ScalperStar] EA STARTED - " + (TradingMode == MODE_1 ? "MODE 1" : "MODE 2"));
    
    SyncStateFromTerminal();
    return(INIT_SUCCEEDED);
 }
 
-//+------------------------------------------------------------------+
-//| EXPERT DEINITIALIZATION                                          |
-//+------------------------------------------------------------------+
 void OnDeinit(const int reason) {
-   Print("[YANAMIKU] EA STOPPED");
+   Print("[ScalperStar] EA STOPPED");
 }
 
-//+------------------------------------------------------------------+
-//| PIP CALCULATION                                                  |
-//+------------------------------------------------------------------+
 double CalculatePipSize() {
    double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
    if(digits == 5 || digits == 3) return point * 10.0;
    return point;
 }
 
-//+------------------------------------------------------------------+
-//| NORMALIZATION                                                    |
-//+------------------------------------------------------------------+
 double NormPrice(double price) {
    return NormalizeDouble(price, digits);
 }
@@ -109,9 +90,6 @@ double GetValidLot() {
    return lot;
 }
 
-//+------------------------------------------------------------------+
-//| TELEGRAM NOTIFICATION                                            |
-//+------------------------------------------------------------------+
 void SendTelegramMsg(string msg) {
    if(!EnableTelegramNotification || TelegramBotToken == "" || TelegramChatID == "") return;
    
@@ -126,13 +104,10 @@ void SendTelegramMsg(string msg) {
    ResetLastError();
    int result = WebRequest("GET", url + text, "", timeout, data, res, resHeaders);
    if(result == -1) {
-      Print("[YANAMIKU] Telegram Error: ", GetLastError());
+      Print("[ScalperStar] Telegram Error: ", GetLastError());
    }
 }
 
-//+------------------------------------------------------------------+
-//| TRADING SESSION & SPREAD CHECK                                   |
-//+------------------------------------------------------------------+
 bool IsTradingSession() {
    if(!UseTradingSession) return true;
    MqlDateTime time;
@@ -149,9 +124,6 @@ bool IsSpreadValid(double currentSpreadPips) {
    return (currentSpreadPips <= MaxSpreadPips);
 }
 
-//+------------------------------------------------------------------+
-//| EXPERT TICK FUNCTION                                             |
-//+------------------------------------------------------------------+
 void OnTick() {
    if(!symInfo.RefreshRates()) return;
    
@@ -173,9 +145,6 @@ void OnTick() {
    }
 }
 
-//+------------------------------------------------------------------+
-//| TRADE TRANSACTION (ACCURATE EVENT DETECTION)                     |
-//+------------------------------------------------------------------+
 void OnTradeTransaction(const MqlTradeTransaction& trans, const MqlTradeRequest& request, const MqlTradeResult& result) {
    if(trans.symbol != _Symbol) return;
    
@@ -187,30 +156,27 @@ void OnTradeTransaction(const MqlTradeTransaction& trans, const MqlTradeRequest&
          
          if(entryType == DEAL_ENTRY_IN) {
             if(dealType == DEAL_TYPE_BUY) {
-               Print("[YANAMIKU] BUY TRIGGERED");
-               SendTelegramMsg("[YANAMIKU] BUY TRIGGERED");
+               Print("[ScalperStar] BUY TRIGGERED");
+               SendTelegramMsg("[ScalperStar] BUY TRIGGERED");
                currentState = STATE_BUY_ACTIVE;
                if(TradingMode == MODE_1) DeleteOppositePending(ORDER_TYPE_SELL_STOP);
             }
             else if(dealType == DEAL_TYPE_SELL) {
-               Print("[YANAMIKU] SELL TRIGGERED");
-               SendTelegramMsg("[YANAMIKU] SELL TRIGGERED");
+               Print("[ScalperStar] SELL TRIGGERED");
+               SendTelegramMsg("[ScalperStar] SELL TRIGGERED");
                currentState = STATE_SELL_ACTIVE;
                if(TradingMode == MODE_1) DeleteOppositePending(ORDER_TYPE_BUY_STOP);
             }
          }
          else if(entryType == DEAL_ENTRY_OUT) {
-            Print("[YANAMIKU] POSITION CLOSED");
-            SendTelegramMsg("[YANAMIKU] POSITION CLOSED");
-            SyncStateFromTerminal(); // Update real-time state
+            Print("[ScalperStar] POSITION CLOSED");
+            SendTelegramMsg("[ScalperStar] POSITION CLOSED");
+            SyncStateFromTerminal();
          }
       }
    }
 }
 
-//+------------------------------------------------------------------+
-//| STATE SYNC & CORE LOGIC                                          |
-//+------------------------------------------------------------------+
 void SyncStateFromTerminal() {
    int buyCount = 0, sellCount = 0, buyStopCount = 0, sellStopCount = 0;
    
@@ -233,7 +199,6 @@ void SyncStateFromTerminal() {
    }
    
    if(buyCount > 0 && sellCount > 0) {
-      // Force close to ensure max 1 active position
       CloseAllPositions();
       currentState = STATE_RESET;
       return;
@@ -254,18 +219,14 @@ void SyncStateFromTerminal() {
       } else if(buyStopCount == 0 && sellStopCount == 0) {
          currentState = STATE_IDLE;
       } else {
-         // Orphaned pending exists, reset cycle for clean start
-         Print("[YANAMIKU] RESET CYCLE");
-         SendTelegramMsg("[YANAMIKU] RESET CYCLE");
+         Print("[ScalperStar] RESET CYCLE");
+         SendTelegramMsg("[ScalperStar] RESET CYCLE");
          DeleteAllPending();
          currentState = STATE_IDLE;
       }
    }
 }
 
-//+------------------------------------------------------------------+
-//| ORDER MANAGEMENT                                                 |
-//+------------------------------------------------------------------+
 void PlaceInitialSetup(double ask, double bid) {
    DeleteAllPending();
    
@@ -283,11 +244,11 @@ void PlaceInitialSetup(double ask, double bid) {
    bool sRes = trade.SellStop(vol, sellEntry, _Symbol, sellSL, 0.0, ORDER_TIME_GTC, 0, "Initial SellStop");
    
    if(bRes && sRes) {
-      Print("[YANAMIKU] BUY STOP PLACED | SELL STOP PLACED");
-      SendTelegramMsg("[YANAMIKU] INITIAL PENDING ORDERS PLACED");
+      Print("[ScalperStar] BUY STOP PLACED | SELL STOP PLACED");
+      SendTelegramMsg("[ScalperStar] INITIAL PENDING ORDERS PLACED");
       currentState = STATE_INITIAL_PENDING;
    } else {
-      Print("[YANAMIKU] Error placing initial pending: ", trade.ResultRetcodeDescription());
+      Print("[ScalperStar] Error placing initial pending: ", trade.ResultRetcodeDescription());
    }
 }
 
@@ -310,17 +271,15 @@ void ManageBuyActive(double ask, double bid, double spreadPips) {
    
    double stopLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * symInfo.Point();
    
-   // TRAILING LOGIC
    if((bid - openPrice) >= (TrailingStartPips * pipSize)) {
       double newSL = NormPrice(bid - TrailingDistancePips * pipSize);
       if(newSL > currentSL + (TrailingStepPips * pipSize) && (bid - newSL) >= stopLevel) {
          if(trade.PositionModify(posTicket, newSL, 0.0)) {
-            Print("[YANAMIKU] TRAILING ACTIVATED - SL UPDATED");
+            Print("[ScalperStar] TRAILING ACTIVATED - SL UPDATED");
          }
       }
    }
    
-   // MODE 2 REVERSAL PENDING LOGIC
    if(TradingMode == MODE_2) {
       ulong ssTicket = 0;
       double ssEntry = 0.0;
@@ -347,7 +306,6 @@ void ManageBuyActive(double ask, double bid, double spreadPips) {
             trade.OrderModify(ssTicket, targetSSEntry, targetSSSL, 0.0, ORDER_TIME_GTC, 0);
          }
       } else {
-         // Create reversal pending if missing
          if(!IsSpreadValid(spreadPips)) return;
          double spreadDist = spreadPips * pipSize;
          double offsetDist = MinimumOppositeOffsetPips * pipSize;
@@ -379,17 +337,15 @@ void ManageSellActive(double ask, double bid, double spreadPips) {
    
    double stopLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * symInfo.Point();
    
-   // TRAILING LOGIC
    if((openPrice - ask) >= (TrailingStartPips * pipSize)) {
       double newSL = NormPrice(ask + TrailingDistancePips * pipSize);
       if((currentSL == 0.0 || newSL < currentSL - (TrailingStepPips * pipSize)) && (newSL - ask) >= stopLevel) {
          if(trade.PositionModify(posTicket, newSL, 0.0)) {
-            Print("[YANAMIKU] TRAILING ACTIVATED - SL UPDATED");
+            Print("[ScalperStar] TRAILING ACTIVATED - SL UPDATED");
          }
       }
    }
    
-   // MODE 2 REVERSAL PENDING LOGIC
    if(TradingMode == MODE_2) {
       ulong bsTicket = 0;
       double bsEntry = 0.0;
@@ -416,7 +372,6 @@ void ManageSellActive(double ask, double bid, double spreadPips) {
             trade.OrderModify(bsTicket, targetBSEntry, targetBSSL, 0.0, ORDER_TIME_GTC, 0);
          }
       } else {
-         // Create reversal pending if missing
          if(!IsSpreadValid(spreadPips)) return;
          double spreadDist = spreadPips * pipSize;
          double offsetDist = MinimumOppositeOffsetPips * pipSize;
@@ -429,16 +384,13 @@ void ManageSellActive(double ask, double bid, double spreadPips) {
    }
 }
 
-//+------------------------------------------------------------------+
-//| UTILITY CLEANUP FUNCTIONS                                        |
-//+------------------------------------------------------------------+
 void DeleteOppositePending(ENUM_ORDER_TYPE oppositeType) {
    for(int i = OrdersTotal() - 1; i >= 0; i--) {
       ulong ticket = OrderGetTicket(i);
       if(OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == MagicNumber) {
          if(OrderGetInteger(ORDER_TYPE) == oppositeType) {
             trade.OrderDelete(ticket);
-            Print("[YANAMIKU] PENDING OPPOSITE DELETED");
+            Print("[ScalperStar] PENDING OPPOSITE DELETED");
          }
       }
    }
@@ -461,4 +413,3 @@ void CloseAllPositions() {
       }
    }
 }
-//+------------------------------------------------------------------+
