@@ -1,0 +1,27 @@
+📌 RULES PENGGUNAAN EA SCALPERSTAR
+
+Halo Teman-teman! Silakan baca dan ikuti panduan dasar penggunaan EA ScalperStar v3.00 berikut agar hasil maksimal dan aman:
+
+1. ⚡ MOMENTUM PENGGUNAAN (HIGH VOLATILITY ONLY)
+- EA ini didesain khusus untuk memanfaatkan pergerakan harga yang sangat cepat/agresif.
+- HANYA AKTIFKAN EA pada momen berikut:
+  • Saat menjelang rilis News High Impact (misal: NFP, CPI, FOMC).
+  • Setelah rilis News (post-news breakout).
+  • Momen harga sedang running kencang.
+- Matikan EA jika kondisi market sedang sideways/flat (sepi pergerakan).
+
+2. 💎 TIPE AKUN
+- WAJIB/SANGAT DISARANKAN menggunakan Tipe Akun Zero Spread / Raw Spread.
+- Hal ini sangat krusial agar jarak eksekusi Pending Order dan Trailing SL berjalan presisi tanpa terganggu spread besar.
+
+3. 🛠 BAGAIMANA CARA PAKAI?
+- Pasang EA di Chart beberapa menit sebelum News/momen pergerakan cepat.
+- EA akan otomatis memasang Buy Stop & Sell Stop.
+- Jika salah satu order kena dan siklus selesai (terkena SL+/Trailing SL), Anda bisa mematikan EA (Remove dari chart) jika momen sudah mereda.
+
+4. ⚠️ RISK MANAGEMENT
+- Gunakan Lot yang terukur dan disesuaikan dengan ketahanan balance masing-masing.
+- Selalu uji coba terlebih dahulu di Akun Demo/Cent untuk memahami ritme eksekusi Mode 1 dan Mode 2.
+
+Official Release by: YanaMiku
+Channel: t.me/YanaMiku
