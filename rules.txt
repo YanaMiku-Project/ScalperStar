@@ -1,6 +1,6 @@
 📌 RULES PENGGUNAAN EA SCALPERSTAR
 
-Halo Teman-teman! Silakan baca dan ikuti panduan dasar penggunaan EA ScalperStar v3.00 berikut agar hasil maksimal dan aman:
+Halo Teman-teman! Silakan baca dan ikuti panduan dasar penggunaan EA ScalperStar berikut agar hasil maksimal dan aman:
 
 1. ⚡ MOMENTUM PENGGUNAAN (HIGH VOLATILITY ONLY)
 - EA ini didesain khusus untuk memanfaatkan pergerakan harga yang sangat cepat/agresif.
