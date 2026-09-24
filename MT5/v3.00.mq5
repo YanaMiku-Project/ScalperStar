@@ -12,6 +12,7 @@ enum ENUM_TRADING_MODE {
 
 enum ENUM_EA_STATE {
    STATE_IDLE,
+   STATE_INITIAL_PENDING,
    STATE_BUY_ACTIVE,
    STATE_SELL_ACTIVE,
    STATE_RESET
@@ -26,6 +27,7 @@ input double TrailingDistancePips = 10.0;
 input double TrailingStepPips = 1.0;
 input double DynamicPendingDistancePips = 10.0;
 input double MinimumOppositeOffsetPips = 0.1;
+input double FixedSpreadPips = 2.0;
 input double MaxSpreadPips = 0.0;
 input ulong  MagicNumber = 20260923;
 input ulong  MaxSlippagePoints = 20;
@@ -39,12 +41,11 @@ input string TelegramChatID = "";
 CTrade         trade;
 CSymbolInfo    symInfo;
 ENUM_EA_STATE  currentState = STATE_IDLE;
-ENUM_EA_STATE  lastState = STATE_IDLE;
 double         pipSize = 0.0;
 double         minVolume = 0.0;
 double         maxVolume = 0.0;
 double         volStep = 0.0;
-int            digits = 0;
+int            eaDigits = 0;
 
 int OnInit() {
    trade.SetExpertMagicNumber(MagicNumber);
@@ -54,30 +55,32 @@ int OnInit() {
    symInfo.Name(_Symbol);
    symInfo.Refresh();
    
-   digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   eaDigits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    pipSize = CalculatePipSize();
    
    minVolume = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    maxVolume = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
    volStep   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
    
-   SyncStateFromTerminal();
-   lastState = currentState;
+   Print("[ScalperStar] EA INITIALIZED - ", (TradingMode == MODE_1 ? "MODE 1" : "MODE 2"));
+   SendTelegramMsg("[ScalperStar] EA STARTED - " + (TradingMode == MODE_1 ? "MODE 1" : "MODE 2"));
    
+   SyncStateFromTerminal();
    return(INIT_SUCCEEDED);
 }
 
 void OnDeinit(const int reason) {
+   Print("[ScalperStar] EA STOPPED");
 }
 
 double CalculatePipSize() {
    double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   if(digits == 5 || digits == 3) return point * 10.0;
+   if(eaDigits == 5 || eaDigits == 3) return point * 10.0;
    return point;
 }
 
 double NormPrice(double price) {
-   return NormalizeDouble(price, digits);
+   return NormalizeDouble(price, eaDigits);
 }
 
 double GetValidLot() {
@@ -86,6 +89,24 @@ double GetValidLot() {
    if(lot > maxVolume) lot = maxVolume;
    lot = MathRound(lot / volStep) * volStep;
    return lot;
+}
+
+void SendTelegramMsg(string msg) {
+   if(!EnableTelegramNotification || TelegramBotToken == "" || TelegramChatID == "") return;
+   
+   string url = "https://api.telegram.org/bot" + TelegramBotToken + "/sendMessage";
+   string text = "?chat_id=" + TelegramChatID + "&text=" + msg;
+   
+   char data[];
+   char res[];
+   string resHeaders;
+   int timeout = 5000;
+   
+   ResetLastError();
+   int result = WebRequest("GET", url + text, "", timeout, data, res, resHeaders);
+   if(result == -1) {
+      Print("[ScalperStar] Telegram Error: ", GetLastError());
+   }
 }
 
 bool IsTradingSession() {
@@ -104,79 +125,61 @@ bool IsSpreadValid(double currentSpreadPips) {
    return (currentSpreadPips <= MaxSpreadPips);
 }
 
-int CountOrders(ENUM_ORDER_TYPE orderType) {
-   int count = 0;
-   for(int i = OrdersTotal() - 1; i >= 0; i--) {
-      ulong ticket = OrderGetTicket(i);
-      if(OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == MagicNumber) {
-         if(OrderGetInteger(ORDER_TYPE) == orderType) count++;
-      }
+void OnTick() {
+   if(!symInfo.RefreshRates()) return;
+   
+   double ask = symInfo.Ask();
+   double bid = symInfo.Bid();
+   double spreadPips = (ask - bid) / pipSize;
+   
+   SyncStateFromTerminal();
+   
+   if(currentState == STATE_IDLE || currentState == STATE_RESET) {
+      if(!IsTradingSession() || !IsSpreadValid(spreadPips)) return;
+      PlaceInitialSetup(ask, bid);
    }
-   return count;
+   else if(currentState == STATE_BUY_ACTIVE) {
+      ManageBuyActive(ask, bid, spreadPips);
+   }
+   else if(currentState == STATE_SELL_ACTIVE) {
+      ManageSellActive(ask, bid, spreadPips);
+   }
 }
 
-ulong GetOrderTicketByType(ENUM_ORDER_TYPE orderType) {
-   for(int i = OrdersTotal() - 1; i >= 0; i--) {
-      ulong ticket = OrderGetTicket(i);
-      if(OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == MagicNumber) {
-         if(OrderGetInteger(ORDER_TYPE) == orderType) return ticket;
-      }
-   }
-   return 0;
-}
-
-void DeleteExtraPending(ENUM_ORDER_TYPE orderType) {
-   bool keptOne = false;
-   for(int i = OrdersTotal() - 1; i >= 0; i--) {
-      ulong ticket = OrderGetTicket(i);
-      if(OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == MagicNumber) {
-         if(OrderGetInteger(ORDER_TYPE) == orderType) {
-            if(!keptOne) {
-               keptOne = true;
-            } else {
-               trade.OrderDelete(ticket);
+void OnTradeTransaction(const MqlTradeTransaction& trans, const MqlTradeRequest& request, const MqlTradeResult& result) {
+   if(trans.symbol != _Symbol) return;
+   
+   if(trans.type == TRADE_TRANSACTION_DEAL_ADD) {
+      long magic = 0;
+      if(HistoryDealGetInteger(trans.deal, DEAL_MAGIC, magic) && magic == MagicNumber) {
+         long entryType = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+         long dealType = HistoryDealGetInteger(trans.deal, DEAL_TYPE);
+         
+         if(entryType == DEAL_ENTRY_IN) {
+            if(dealType == DEAL_TYPE_BUY) {
+               Print("[ScalperStar] BUY TRIGGERED");
+               SendTelegramMsg("[ScalperStar] BUY TRIGGERED");
+               currentState = STATE_BUY_ACTIVE;
+               if(TradingMode == MODE_1) DeleteOppositePending(ORDER_TYPE_SELL_STOP);
+            }
+            else if(dealType == DEAL_TYPE_SELL) {
+               Print("[ScalperStar] SELL TRIGGERED");
+               SendTelegramMsg("[ScalperStar] SELL TRIGGERED");
+               currentState = STATE_SELL_ACTIVE;
+               if(TradingMode == MODE_1) DeleteOppositePending(ORDER_TYPE_BUY_STOP);
             }
          }
-      }
-   }
-}
-
-void CloseExtraPositions(ENUM_POSITION_TYPE posType) {
-   bool keptOne = false;
-   for(int i = PositionsTotal() - 1; i >= 0; i--) {
-      ulong ticket = PositionGetTicket(i);
-      if(PositionGetString(POSITION_SYMBOL) == _Symbol && PositionGetInteger(POSITION_MAGIC) == MagicNumber) {
-         if(PositionGetInteger(POSITION_TYPE) == posType) {
-            if(!keptOne) {
-               keptOne = true;
-            } else {
-               trade.PositionClose(ticket);
-            }
+         else if(entryType == DEAL_ENTRY_OUT) {
+            Print("[ScalperStar] POSITION CLOSED");
+            SendTelegramMsg("[ScalperStar] POSITION CLOSED");
+            SyncStateFromTerminal();
          }
-      }
-   }
-}
-
-void DeleteAllPending() {
-   for(int i = OrdersTotal() - 1; i >= 0; i--) {
-      ulong ticket = OrderGetTicket(i);
-      if(OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == MagicNumber) {
-         trade.OrderDelete(ticket);
-      }
-   }
-}
-
-void CloseAllPositions() {
-   for(int i = PositionsTotal() - 1; i >= 0; i--) {
-      ulong ticket = PositionGetTicket(i);
-      if(PositionGetString(POSITION_SYMBOL) == _Symbol && PositionGetInteger(POSITION_MAGIC) == MagicNumber) {
-         trade.PositionClose(ticket);
       }
    }
 }
 
 void SyncStateFromTerminal() {
-   int buyCount = 0, sellCount = 0;
+   int buyCount = 0, sellCount = 0, buyStopCount = 0, sellStopCount = 0;
    
    for(int i = PositionsTotal() - 1; i >= 0; i--) {
       ulong ticket = PositionGetTicket(i);
@@ -187,50 +190,66 @@ void SyncStateFromTerminal() {
       }
    }
    
+   for(int i = OrdersTotal() - 1; i >= 0; i--) {
+      ulong ticket = OrderGetTicket(i);
+      if(OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == MagicNumber) {
+         long type = OrderGetInteger(ORDER_TYPE);
+         if(type == ORDER_TYPE_BUY_STOP) buyStopCount++;
+         if(type == ORDER_TYPE_SELL_STOP) sellStopCount++;
+      }
+   }
+   
    if(buyCount > 0 && sellCount > 0) {
       CloseAllPositions();
       currentState = STATE_RESET;
       return;
    }
    
-   if(buyCount > 0) {
-      if(buyCount > 1) CloseExtraPositions(POSITION_TYPE_BUY);
+   if(buyCount == 1) {
       currentState = STATE_BUY_ACTIVE;
       return;
    }
-   
-   if(sellCount > 0) {
-      if(sellCount > 1) CloseExtraPositions(POSITION_TYPE_SELL);
+   if(sellCount == 1) {
       currentState = STATE_SELL_ACTIVE;
       return;
    }
    
-   currentState = STATE_IDLE;
+   if(buyCount == 0 && sellCount == 0) {
+      if(buyStopCount == 1 && sellStopCount == 1) {
+         currentState = STATE_INITIAL_PENDING;
+      } else if(buyStopCount == 0 && sellStopCount == 0) {
+         currentState = STATE_IDLE;
+      } else {
+         Print("[ScalperStar] RESET CYCLE");
+         SendTelegramMsg("[ScalperStar] RESET CYCLE");
+         DeleteAllPending();
+         currentState = STATE_IDLE;
+      }
+   }
 }
 
-void ManageInitialPending(double ask, double bid) {
-   int bsCount = CountOrders(ORDER_TYPE_BUY_STOP);
-   int ssCount = CountOrders(ORDER_TYPE_SELL_STOP);
-   
-   if(bsCount > 1) { DeleteExtraPending(ORDER_TYPE_BUY_STOP); bsCount = 1; }
-   if(ssCount > 1) { DeleteExtraPending(ORDER_TYPE_SELL_STOP); ssCount = 1; }
-   
-   if(bsCount > 0 && ssCount > 0) return;
+void PlaceInitialSetup(double ask, double bid) {
+   DeleteAllPending();
    
    double vol = GetValidLot();
    double stopLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * symInfo.Point();
    double minDistance = MathMax(InitialDistancePips * pipSize, stopLevel);
    
-   if(bsCount == 0) {
-      double buyEntry = NormPrice(ask + minDistance);
-      double buySL = NormPrice(buyEntry - InitialSLPips * pipSize);
-      trade.BuyStop(vol, buyEntry, _Symbol, buySL, 0.0, ORDER_TIME_GTC, 0, "");
-   }
+   double buyEntry = NormPrice(ask + minDistance);
+   double buySL = NormPrice(buyEntry - InitialSLPips * pipSize);
    
-   if(ssCount == 0) {
-      double sellEntry = NormPrice(bid - minDistance);
-      double sellSL = NormPrice(sellEntry + InitialSLPips * pipSize);
-      trade.SellStop(vol, sellEntry, _Symbol, sellSL, 0.0, ORDER_TIME_GTC, 0, "");
+   double sellEntry = NormPrice(bid - minDistance);
+   double sellSL = NormPrice(sellEntry + InitialSLPips * pipSize);
+   
+   bool bRes = trade.BuyStop(vol, buyEntry, _Symbol, buySL, 0.0, ORDER_TIME_GTC, 0, "Initial BuyStop");
+   bool sRes = trade.SellStop(vol, sellEntry, _Symbol, sellSL, 0.0, ORDER_TIME_GTC, 0, "Initial SellStop");
+   
+   if(bRes && sRes) {
+      Print("[ScalperStar] BUY STOP PLACED | SELL STOP PLACED");
+      SendTelegramMsg("[ScalperStar] INITIAL PENDING ORDERS PLACED");
+      currentState = STATE_INITIAL_PENDING;
+   } else {
+      Print("[ScalperStar] Error placing initial pending: ", trade.ResultRetcodeDescription());
    }
 }
 
@@ -256,19 +275,29 @@ void ManageBuyActive(double ask, double bid, double spreadPips) {
    if((bid - openPrice) >= (TrailingStartPips * pipSize)) {
       double newSL = NormPrice(bid - TrailingDistancePips * pipSize);
       if(newSL > currentSL + (TrailingStepPips * pipSize) && (bid - newSL) >= stopLevel) {
-         trade.PositionModify(posTicket, newSL, 0.0);
+         if(trade.PositionModify(posTicket, newSL, 0.0)) {
+            Print("[ScalperStar] TRAILING ACTIVATED - SL UPDATED");
+         }
       }
    }
    
    if(TradingMode == MODE_2) {
-      int ssCount = CountOrders(ORDER_TYPE_SELL_STOP);
-      if(ssCount > 1) DeleteExtraPending(ORDER_TYPE_SELL_STOP);
+      ulong ssTicket = 0;
+      double ssEntry = 0.0;
+      double ssSL = 0.0;
       
-      ulong ssTicket = GetOrderTicketByType(ORDER_TYPE_SELL_STOP);
+      for(int i = OrdersTotal() - 1; i >= 0; i--) {
+         ulong t = OrderGetTicket(i);
+         if(OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == MagicNumber && OrderGetInteger(ORDER_TYPE) == ORDER_TYPE_SELL_STOP) {
+            ssTicket = t;
+            ssEntry = OrderGetDouble(ORDER_PRICE_OPEN);
+            ssSL = OrderGetDouble(ORDER_SL);
+            break;
+         }
+      }
       
-      if(ssTicket > 0 && OrderSelect(ssTicket)) {
-         double ssEntry = OrderGetDouble(ORDER_PRICE_OPEN);
-         double spreadDist = spreadPips * pipSize;
+      if(ssTicket > 0) {
+         double spreadDist = FixedSpreadPips * pipSize;
          double offsetDist = MinimumOppositeOffsetPips * pipSize;
          
          double targetSSEntry = NormPrice(bid - (DynamicPendingDistancePips * pipSize) - spreadDist - offsetDist);
@@ -277,20 +306,16 @@ void ManageBuyActive(double ask, double bid, double spreadPips) {
          if(targetSSEntry > ssEntry + (TrailingStepPips * pipSize) && (bid - targetSSEntry) >= stopLevel) {
             trade.OrderModify(ssTicket, targetSSEntry, targetSSSL, 0.0, ORDER_TIME_GTC, 0);
          }
-      } else if(ssTicket == 0) {
+      } else {
          if(!IsSpreadValid(spreadPips)) return;
-         double vol = GetValidLot();
-         double spreadDist = spreadPips * pipSize;
+         double spreadDist = FixedSpreadPips * pipSize;
          double offsetDist = MinimumOppositeOffsetPips * pipSize;
          double targetSSEntry = NormPrice(bid - (DynamicPendingDistancePips * pipSize) - spreadDist - offsetDist);
          double targetSSSL = NormPrice(targetSSEntry + InitialSLPips * pipSize);
-         
          if((bid - targetSSEntry) >= stopLevel) {
-            trade.SellStop(vol, targetSSEntry, _Symbol, targetSSSL, 0.0, ORDER_TIME_GTC, 0, "");
+            trade.SellStop(GetValidLot(), targetSSEntry, _Symbol, targetSSSL, 0.0, ORDER_TIME_GTC, 0, "Reversal SellStop");
          }
       }
-   } else {
-      DeleteAllPending();
    }
 }
 
@@ -316,19 +341,29 @@ void ManageSellActive(double ask, double bid, double spreadPips) {
    if((openPrice - ask) >= (TrailingStartPips * pipSize)) {
       double newSL = NormPrice(ask + TrailingDistancePips * pipSize);
       if((currentSL == 0.0 || newSL < currentSL - (TrailingStepPips * pipSize)) && (newSL - ask) >= stopLevel) {
-         trade.PositionModify(posTicket, newSL, 0.0);
+         if(trade.PositionModify(posTicket, newSL, 0.0)) {
+            Print("[ScalperStar] TRAILING ACTIVATED - SL UPDATED");
+         }
       }
    }
    
    if(TradingMode == MODE_2) {
-      int bsCount = CountOrders(ORDER_TYPE_BUY_STOP);
-      if(bsCount > 1) DeleteExtraPending(ORDER_TYPE_BUY_STOP);
+      ulong bsTicket = 0;
+      double bsEntry = 0.0;
+      double bsSL = 0.0;
       
-      ulong bsTicket = GetOrderTicketByType(ORDER_TYPE_BUY_STOP);
+      for(int i = OrdersTotal() - 1; i >= 0; i--) {
+         ulong t = OrderGetTicket(i);
+         if(OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == MagicNumber && OrderGetInteger(ORDER_TYPE) == ORDER_TYPE_BUY_STOP) {
+            bsTicket = t;
+            bsEntry = OrderGetDouble(ORDER_PRICE_OPEN);
+            bsSL = OrderGetDouble(ORDER_SL);
+            break;
+         }
+      }
       
-      if(bsTicket > 0 && OrderSelect(bsTicket)) {
-         double bsEntry = OrderGetDouble(ORDER_PRICE_OPEN);
-         double spreadDist = spreadPips * pipSize;
+      if(bsTicket > 0) {
+         double spreadDist = FixedSpreadPips * pipSize;
          double offsetDist = MinimumOppositeOffsetPips * pipSize;
          
          double targetBSEntry = NormPrice(ask + (DynamicPendingDistancePips * pipSize) + spreadDist + offsetDist);
@@ -337,47 +372,45 @@ void ManageSellActive(double ask, double bid, double spreadPips) {
          if(targetBSEntry < bsEntry - (TrailingStepPips * pipSize) && (targetBSEntry - ask) >= stopLevel) {
             trade.OrderModify(bsTicket, targetBSEntry, targetBSSL, 0.0, ORDER_TIME_GTC, 0);
          }
-      } else if(bsTicket == 0) {
+      } else {
          if(!IsSpreadValid(spreadPips)) return;
-         double vol = GetValidLot();
-         double spreadDist = spreadPips * pipSize;
+         double spreadDist = FixedSpreadPips * pipSize;
          double offsetDist = MinimumOppositeOffsetPips * pipSize;
          double targetBSEntry = NormPrice(ask + (DynamicPendingDistancePips * pipSize) + spreadDist + offsetDist);
          double targetBSSL = NormPrice(targetBSEntry - InitialSLPips * pipSize);
-         
          if((targetBSEntry - ask) >= stopLevel) {
-            trade.BuyStop(vol, targetBSEntry, _Symbol, targetBSSL, 0.0, ORDER_TIME_GTC, 0, "");
+            trade.BuyStop(GetValidLot(), targetBSEntry, _Symbol, targetBSSL, 0.0, ORDER_TIME_GTC, 0, "Reversal BuyStop");
          }
       }
-   } else {
-      DeleteAllPending();
    }
 }
 
-void OnTick() {
-   if(!symInfo.RefreshRates()) return;
-   
-   double ask = symInfo.Ask();
-   double bid = symInfo.Bid();
-   double spreadPips = (ask - bid) / pipSize;
-   
-   SyncStateFromTerminal();
-   
-   if(currentState != lastState) {
-      if(currentState == STATE_IDLE && (lastState == STATE_BUY_ACTIVE || lastState == STATE_SELL_ACTIVE || lastState == STATE_RESET)) {
-         DeleteAllPending();
+void DeleteOppositePending(ENUM_ORDER_TYPE oppositeType) {
+   for(int i = OrdersTotal() - 1; i >= 0; i--) {
+      ulong ticket = OrderGetTicket(i);
+      if(OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == MagicNumber) {
+         if(OrderGetInteger(ORDER_TYPE) == oppositeType) {
+            trade.OrderDelete(ticket);
+            Print("[ScalperStar] PENDING OPPOSITE DELETED");
+         }
       }
-      lastState = currentState;
    }
-   
-   if(currentState == STATE_IDLE || currentState == STATE_RESET) {
-      if(!IsTradingSession() || !IsSpreadValid(spreadPips)) return;
-      ManageInitialPending(ask, bid);
+}
+
+void DeleteAllPending() {
+   for(int i = OrdersTotal() - 1; i >= 0; i--) {
+      ulong ticket = OrderGetTicket(i);
+      if(OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == MagicNumber) {
+         trade.OrderDelete(ticket);
+      }
    }
-   else if(currentState == STATE_BUY_ACTIVE) {
-      ManageBuyActive(ask, bid, spreadPips);
-   }
-   else if(currentState == STATE_SELL_ACTIVE) {
-      ManageSellActive(ask, bid, spreadPips);
+}
+
+void CloseAllPositions() {
+   for(int i = PositionsTotal() - 1; i >= 0; i--) {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionGetString(POSITION_SYMBOL) == _Symbol && PositionGetInteger(POSITION_MAGIC) == MagicNumber) {
+         trade.PositionClose(ticket);
+      }
    }
 }
