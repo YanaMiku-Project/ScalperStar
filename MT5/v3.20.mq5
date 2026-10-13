@@ -21,7 +21,7 @@ enum ENUM_EA_STATE {
 input ENUM_TRADING_MODE TradingMode = MODE_1;
 input double FixedLot = 0.01;
 input double InitialDistancePips = 10.0;
-input double InitialSLPips = 10.0;
+input double InitialSLPips = 40.0;
 input double TrailingStartPips = 20.0;
 input double TrailingDistancePips = 10.0;
 input double TrailingStepPips = 1.0;
