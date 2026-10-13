@@ -1,6 +1,6 @@
 #property copyright "YanaMiku"
 #property link      "t.me/YanaMiku"
-#property version   "3.10"
+#property version   "3.20"
 
 #include <Trade\Trade.mqh>
 #include <Trade\SymbolInfo.mqh>
