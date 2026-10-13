@@ -1,0 +1,44 @@
+EA SCALPERSTAR (YanaMiku v3.10)
+Penjelasan Parameter
+
+MODE TRADING
+- TradingMode : MODE_1 = 1 posisi + hapus pending lawan arah | MODE_2 = 1 posisi + pending reversal dinamis (hedging)
+
+LOT & ORDER
+- FixedLot : Ukuran lot tetap (auto sesuaikan min/max/step broker)
+- MagicNumber : ID unik EA (hanya kelola order miliknya sendiri)
+- MaxSlippagePoints : Toleransi slippage (dalam poin) saat eksekusi
+
+JARAK & SL (dalam Pip)
+- InitialDistancePips : Jarak awal BuyStop/SellStop dari harga
+- InitialSLPips : Jarak Stop Loss dari harga entry
+- TrailingStartPips : Profit minimal sebelum trailing SL aktif
+- TrailingDistancePips : Jarak SL dari harga saat trailing aktif
+- TrailingStepPips : Minimal pergerakan sebelum SL di-update lagi
+- DynamicPendingDistancePips : Jarak pending reversal (MODE_2)
+- MinimumOppositeOffsetPips : Offset tambahan pending reversal (MODE_2)
+
+SPREAD
+- FixedSpreadPips : Asumsi spread tetap utk hitung jarak pending (MODE_2)
+- MaxSpreadPips : Batas maksimal spread utk entry (0 = nonaktif)
+
+SESI TRADING
+- UseTradingSession : true/false aktifkan filter jam trading
+- StartHour : Jam mulai trading (0-23)
+- EndHour : Jam selesai trading (mendukung lintas tengah malam)
+
+NOTIFIKASI TELEGRAM
+- EnableTelegramNotification : true/false aktifkan notif Telegram
+- TelegramBotToken : Token bot dari @BotFather
+- TelegramChatID : ID chat tujuan notifikasi
+
+CARA KERJA SINGKAT
+1. IDLE -> pasang BuyStop + SellStop (jarak = InitialDistancePips)
+2. TRIGGER -> masuk BUY_ACTIVE / SELL_ACTIVE
+   - MODE_1 : hapus pending lawan arah
+   - MODE_2 : geser pending reversal dinamis
+3. TRAILING -> aktif setelah profit >= TrailingStartPips
+4. HEDGE -> jika 2 arah terbuka bersamaan -> Close All + Reset
+
+CATATAN
+Whitelist URL Telegram di Tools > Options > Expert Advisors jika ingin pakai notifikasi.
