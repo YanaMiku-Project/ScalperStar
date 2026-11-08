@@ -4,7 +4,7 @@
 //|   Hardened version: risk items #1-#17 of the risk analysis       |
 //+------------------------------------------------------------------+
 #property copyright "ScalperStar"
-#property version   "2.00"
+#property version   "3.50"
 #property description "ScalperStar - Buy Stop / Sell Stop scalper with trailing (Mode 1 & Mode 2 reversal), hardened"
 
 #include <Trade\Trade.mqh>
