@@ -3,7 +3,7 @@
 //|                       Stop-order scalper: Mode 1 / Mode 2        |
 //+------------------------------------------------------------------+
 #property copyright "ScalperStar"
-#property version   "1.00"
+#property version   "3.40"
 #property description "ScalperStar - Buy Stop / Sell Stop scalper with trailing (Mode 1 & Mode 2 reversal)"
 
 #include <Trade\Trade.mqh>
