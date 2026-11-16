@@ -1,9 +1,5 @@
 //+------------------------------------------------------------------+
 //|                                                  ScalperStar.mq5 |
-//|                  Stop-order scalper: Mode 1 / Mode 2 (v2.00)     |
-//|   v3.60: all pause / stop filters removed (always-on trading)    |
-//|   v3.70: Mode 1 trailing starts only after profit >= TrailPips   |
-//|          (SL jumps to break-even first, then follows the price)  |
 //+------------------------------------------------------------------+
 #property copyright "ScalperStar"
 #property version   "3.70"
